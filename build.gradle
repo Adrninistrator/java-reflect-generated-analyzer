@@ -1,0 +1,159 @@
+plugins {
+    // 下载插件
+    id 'de.undercouch.download' version '4.1.1'
+}
+import de.undercouch.gradle.tasks.download.Download
+
+apply plugin: 'eclipse'
+apply plugin: 'java'
+apply plugin: 'java-library'
+apply plugin: 'idea'
+
+group 'com.github.adrninistrator'
+
+def projectName = 'java-reflect-generated-analyzer'
+description = "java-reflect-generated-analyzer"
+version = "1.0.0"
+def jar_output_dir = "jar_output_dir"
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    implementation.exclude module: 'slf4j-log4j12'
+    implementation.exclude module: 'log4j'
+    implementation.exclude module: 'commons-logging'
+    implementation.exclude module: 'jsp-api'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+        }
+
+        resources {
+            srcDir 'src/main/resources'
+        }
+    }
+
+    test {
+        java {
+            srcDir 'src/test/java'
+        }
+
+        resources {
+            srcDir 'src/test/resources'
+        }
+    }
+}
+
+clean {
+    delete "${buildDir}"
+    delete "${jar_output_dir}"
+}
+
+List args4j = ['args4j:args4j:2.33']
+
+List bcel = ['org.apache.bcel:bcel:6.10.0']
+
+List junit = ['junit:junit:4.13.2']
+
+dependencies {
+    implementation args4j, bcel
+    implementation files('lib/dumpclass-0.0.2-classes.jar')
+    runtimeOnly files("${System.getenv('JAVA_HOME')}/lib/sa-jdi.jar")
+    testImplementation junit
+}
+
+compileJava.dependsOn clean
+compileJava.options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+
+processResources {
+    setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
+}
+
+processTestResources {
+    setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
+}
+
+task createJavaProject {
+    doLast {
+        sourceSets*.java.srcDirs*.each { it.mkdirs() }
+        sourceSets*.resources.srcDirs*.each { it.mkdirs() }
+    }
+}
+
+task downDumpClass(type: Download) {
+    src 'http://search.maven.org/remotecontent?filepath=io/github/hengyunabc/dumpclass/0.0.2/dumpclass-0.0.2.jar'
+    dest 'build/dumpclass-0.0.2.jar'
+}
+
+task unzipDumpClass(dependsOn: 'downDumpClass') {
+    doLast {
+        def jarFile = file('build/dumpclass-0.0.2.jar')
+        def destinationDir = file('build/dumpclass_unzipped')
+        if (!destinationDir.exists()) {
+            destinationDir.mkdirs()
+        }
+        ant.unzip(src: jarFile, dest: destinationDir)
+    }
+}
+
+task prepareDumpClass(type: Jar, dependsOn: 'unzipDumpClass') {
+    archiveFileName.set('dumpclass-0.0.2-classes.jar')
+    from('build/dumpclass_unzipped/BOOT-INF/classes/') {
+        into '/'
+    }
+    doLast {
+        copy {
+            from file('build/libs/dumpclass-0.0.2-classes.jar')
+            into 'lib/'
+        }
+    }
+}
+
+task gen_run_jar(type: Jar) {
+    archiveFileName.set('java-reflect-generated-analyzer.jar')
+    from(sourceSets.main.output) {
+        into '/'
+    }
+
+    doFirst {
+        delete "${jar_output_dir}"
+    }
+
+    doLast {
+        copy {
+            from 'build/libs/java-reflect-generated-analyzer.jar'
+            into "${jar_output_dir}/jar/"
+        }
+        copy {
+            from 'bat/'
+            into "${jar_output_dir}/"
+        }
+        copy {
+            from 'shell/'
+            into "${jar_output_dir}/"
+        }
+        copy {
+            from configurations.runtimeClasspath
+            into "${jar_output_dir}/lib"
+        }
+    }
+}
+
+idea {
+    module {
+        // and some extra dirs that should be excluded by IDEA
+        excludeDirs += file('.idea')
+        excludeDirs += file('gradle')
+        excludeDirs += file('jar_output_dir')
+        excludeDirs += file('rga_result')
+    }
+}
